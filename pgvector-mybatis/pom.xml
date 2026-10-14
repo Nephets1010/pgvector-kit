@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright 2026 The pgvector-kit Authors. Licensed under the Apache License, Version 2.0 (the "License"); see the
+  LICENSE file in the project root for the full license text.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.github.nephets</groupId>
+    <artifactId>pgvector-kit</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>pgvector-mybatis</artifactId>
+  <name>pgvector-mybatis</name>
+  <description>MyBatis 的 vector TypeHandler：float[] 直接当实体字段用</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.github.nephets</groupId>
+      <artifactId>pgvector-core</artifactId>
+    </dependency>
+
+    <!-- SLF4J API（compile 作用域，版本由 Spring Boot parent 管理）：为 VectorTypeHandler 提供可观测日志 -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+
+    <!--
+      ★ mybatis 与 postgresql 都声明为 provided：
+        用到 TypeHandler 的项目必然已经有自己的 MyBatis 与 PostgreSQL 驱动，
+        我们把它们标成 compile 只会引入版本冲突（国内项目最常见的依赖灾难之一）。
+        provided 仍然会出现在本模块的编译与测试类路径上。
+    -->
+    <dependency>
+      <groupId>org.mybatis</groupId>
+      <artifactId>mybatis</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <properties>
+    <jacoco.line.minimum>0.80</jacoco.line.minimum>
+  </properties>
+</project>

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright 2026 The pgvector-kit Authors. Licensed under the Apache License, Version 2.0 (the "License"); see the
+  LICENSE file in the project root for the full license text.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.github.nephets</groupId>
+    <artifactId>pgvector-kit</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>pgvector-core</artifactId>
+  <name>pgvector-core</name>
+  <description>vector 类型编解码、混合查询 DSL、索引建议器 —— 零框架依赖（仅允许 slf4j-api 日志门面，不含实现），只用 JDK + SLF4J 门面</description>
+
+  <!--
+    ★ 这个模块刻意【零框架依赖】，连 Spring 都没有（仅允许 slf4j-api 日志门面，不含任何实现）。
+      理由：类型桥接与 SQL 生成是纯字符串/数组逻辑，挂任何框架都会把它锁死在那个框架版本上。
+      测试依赖（JUnit / AssertJ）是 test scope，不会泄漏给使用者。
+      这条边界由 CI 的 architecture-boundaries job 用 dependency:list 机器校验。
+  -->
+  <dependencies>
+    <!--
+      ★ slf4j-api（compile 作用域，版本由 Spring Boot parent 管理）。
+        本模块刻意保持「零框架依赖」——这里加的是日志门面而非实现，
+        调用方用自己的日志实现（logback/log4j2 等）即可，不会把 pgvector-core 锁死在任何框架上。
+        architecture-boundaries CI 只禁止 org.springframework，slf4j 不在其列。
+    -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <properties>
+    <!-- core 是本仓的价值所在，门禁最严 -->
+    <jacoco.line.minimum>0.85</jacoco.line.minimum>
+  </properties>
+</project>
