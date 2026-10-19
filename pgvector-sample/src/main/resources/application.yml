@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: pgvector-kit-sample
+  datasource:
+    # 默认指向 docker-compose 里那个 postgres，可用环境变量覆盖
+    url: ${PGVECTOR_JDBC_URL:jdbc:postgresql://localhost:55432/vectordemo}
+    username: ${PGVECTOR_JDBC_USER:postgres}
+    password: ${PGVECTOR_JDBC_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: pgvector-sample
+  sql:
+    init:
+      mode: always
+
+pgvector:
+  default-operator: cosine
+  default-dimensions: 8
+
+logging:
+  level:
+    root: WARN
+    io.github.nephets.pgvector: INFO

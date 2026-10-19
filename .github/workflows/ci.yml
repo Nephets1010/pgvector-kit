@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# 同分支的新 push 直接取消旧构建，省 CI 配额
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  MAVEN_VERSION: 3.9.9
+  JAVA_VERSION: '21'
+
+jobs:
+  # ============================================================
+  # Job 1：编译 + 单元测试 + 集成测试 + 覆盖率门禁
+  #   pgvector-core / jpa / mybatis / starter 都是纯进程内测试，不依赖外部服务。
+  #   sample 的 *IT 在没有 Docker / 未给 -Dpgvector.jdbc.url 时会被 assumeTrue 跳过，
+  #   真正的端到端验证由 pgvector-smoke job（带 pgvector 服务容器）承担。
+  # ============================================================
+  verify:
+    # ★ 这里必须写死版本号，不能用 ${{ env.JAVA_VERSION }}。
+    #   job 的 name 字段在 workflow 解析的极早期求值，此时 env 尚未填充，
+    #   GitHub 会直接拒绝整个文件（见 ①②③ 的踩坑记录）。
+    name: verify (Java 21)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: 打印工具链版本
+        run: java -version && ./mvnw -version
+
+      - name: 缓存 Maven 依赖
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2-
+
+      # 覆盖率门禁（core ≥ 85% / jpa ≥ 80% / 其余 ≥ 70%）在 jacoco:check 里，低于阈值本步即失败。
+      # 注意：本步使用完整 clean verify（不传 -Dtest=），所有测试都会真正运行。
+      - name: 编译 + 测试 + 覆盖率门禁
+        run: ./mvnw -B -ntp clean verify -Dstyle.color=never
+
+      - name: 上传覆盖率报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: '**/target/site/jacoco/index.html'
+          retention-days: 14
+
+  # ============================================================
+  # Job 2：格式检查（spotless 同时负责 Apache-2.0 许可证头）
+  # ============================================================
+  spotless:
+    name: spotless
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: 检查代码格式与 Apache-2.0 许可证头（google-java-format AOSP）
+        run: ./mvnw -B -ntp spotless:check -Dstyle.color=never
+
+  # ============================================================
+  # Job 3：架构边界门禁
+  #   core 零 Spring 依赖 —— pgvector-core 必须保持纯 Java（JDK 自带类型/数组/SQL 字符串）。
+  # ============================================================
+  architecture-boundaries:
+    name: architecture-boundaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: core 模块禁止出现 Spring 依赖
+        # ★ 两条命令必须在同一个 run 块里：写成两个平级 run: 会被 YAML 静默覆盖。
+        run: |
+          ./mvnw -B -ntp -pl pgvector-core dependency:list -DoutputFile=/tmp/core-deps.txt -DincludeScope=compile
+          if [ ! -s /tmp/core-deps.txt ]; then
+            echo "::error::dependency:list 未产出依赖清单，门禁无法判定（请勿用 -q 静默失败）"
+            exit 1
+          fi
+          if grep -E 'org\.springframework' /tmp/core-deps.txt; then
+            echo "::error::core 模块出现 Spring 依赖，违反「core 零框架依赖」硬约束"
+            exit 1
+          fi
+          echo "core 依赖树中无 org.springframework.*，边界完好"
+
+  # ============================================================
+  # Job 4：端到端冒烟 —— 在真实 pgvector 上跑 sample 的集成测试。
+  #   用 pgvector/pgvector:pg16 服务容器提供带 vector 扩展的 PostgreSQL；
+  #   测试通过 -Dpgvector.jdbc.url 直连该容器，于是「compose 起来的库」与「测试跑的库」是同一个。
+  # ============================================================
+  pgvector-smoke:
+    name: pgvector-smoke (real postgres + pgvector)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      pg:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vectordemo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: 在真实 pgvector 上运行 sample 集成测试
+        run: ./mvnw -B -ntp -pl pgvector-sample -am verify -Dpgvector.jdbc.url=jdbc:postgresql://localhost:5432/vectordemo -Dpgvector.jdbc.user=postgres -Dpgvector.jdbc.password=postgres -Dstyle.color=never
